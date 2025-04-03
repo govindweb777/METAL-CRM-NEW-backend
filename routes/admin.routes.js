@@ -77,6 +77,8 @@ router.put( '/reassign', auth, isAdmin, graphicController.reassignUnassignedOrde
 // Get user's assigned orders (for graphics team)
 router.get('/assigned', auth, isGraphics, graphicController.getUserAssignedOrders);
 
+router.post('/updateWorkQueue',auth,isGraphics,graphicController.updateWorkQueueStatus);
+
 
 
 

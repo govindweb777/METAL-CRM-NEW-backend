@@ -5,6 +5,7 @@ const User = require('../models/user.models');
 const { uploadImageToCloudinary,localFileUpload } = require("../utils/ImageUploader");
 const Agenda = require('agenda');
 const dotenv= require("dotenv");
+const moment = require('moment-timeZone'); // To format date & time
 dotenv.config();
 
 
@@ -326,10 +327,22 @@ exports.getUserAssignedOrders = async (req, res) => {
         .populate('createdBy', 'name email')
         .sort({ createdAt: -1 });
 
+        console.log("assignedOrders is",assignedOrders);
+
+        // const filteredOrders = assignedOrders.map(({customer,createdBy,assignedTo,...rest})=>rest);
+
+        const filteredOrders = assignedOrders.map(order => {
+            const obj = order.toObject();  // Convert Mongoose document to a plain object
+            const { customer, createdBy, assignedTo, ...rest } = obj;
+            return rest;
+        });
+        
+        console.log("fileredOrders is:",filteredOrders);
+
         res.status(200).json({
             success: true,
             count: assignedOrders.length,
-            data: assignedOrders
+            data: filteredOrders
         });
     } catch (error) {
         console.error('Error fetching assigned orders', error);
@@ -448,3 +461,89 @@ async function gracefulShutdown() {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
+
+
+
+
+
+
+// Allowed status values defined in your WorkQueue schema
+const allowedStatuses = ["Pending", "InProgress", "Completed", "Failed", "Paused"];
+
+exports.updateWorkQueueStatus = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        // Destructure workQueueId and new status from the request body
+        const { workQueueId, status } = req.body;
+        console.log("status is:",status);
+        
+
+        // Validate that both workQueueId and status are provided
+        if (!workQueueId || !status) {
+            return res.status(400).json({
+                success: false,
+                message: 'WorkQueue ID and status are required'
+            });
+        }
+
+        // Validate that the provided status is allowed
+        if (!allowedStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: `Invalid status provided. Allowed statuses: ${allowedStatuses.join(', ')}`
+            });
+        }
+
+        // Fetch the WorkQueue document within the session
+        const workQueueItem = await WorkQueue.findById(workQueueId).session(session);
+        if (!workQueueItem) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(404).json({
+                success: false,
+                message: 'WorkQueue item not found'
+            });
+        }
+
+        // Update the WorkQueue item's status
+        workQueueItem.status = status;
+        // Saving the document will trigger your pre('save') middleware that updates the Order status.
+
+
+          // Update status and timestamps
+         const istTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss"); 
+
+        if (status === "InProgress") {
+              workQueueItem.startedAt = istTime; // Capture start time
+          } else if (status === "Completed") {
+              workQueueItem.completedAt = istTime; // Capture completion time
+          }
+
+
+
+        const updatedWorkQueueItem = await workQueueItem.save({ session });
+
+        // Commit the transaction
+        await session.commitTransaction();
+        session.endSession();
+
+        res.status(200).json({
+            success: true,
+            message: 'WorkQueue status updated successfully, and Order status updated accordingly.',
+            data: updatedWorkQueueItem
+        });
+    } catch (error) {
+        // Abort the transaction if any error occurs
+        await session.abortTransaction();
+        session.endSession();
+
+        console.error('Error updating WorkQueue status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: error.message
+        });
+    }
+};
