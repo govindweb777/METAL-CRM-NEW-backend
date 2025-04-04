@@ -463,10 +463,6 @@ process.on('SIGINT', gracefulShutdown);
 
 
 
-
-
-
-
 // Allowed status values defined in your WorkQueue schema
 const allowedStatuses = ["Pending", "InProgress", "Completed", "Failed", "Paused"];
 
